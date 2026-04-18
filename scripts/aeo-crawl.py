@@ -22,6 +22,8 @@ from html.parser import HTMLParser
 from html import unescape
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
+from collections import defaultdict
+from urllib.parse import urlparse
 
 
 # ─── Constants ───────────────────────────────────────────────────────────────
@@ -458,7 +460,7 @@ def parse_sitemap(text, base_url):
 
 # ─── Main crawl ──────────────────────────────────────────────────────────────
 
-def crawl(url, max_pages=0, timeout=15, max_bytes=524288, verify_ssl=True):
+def crawl(url, max_pages=10, timeout=15, max_bytes=524288, verify_ssl=True, page_type_mode=False):
     """Run full AEO crawl. Return result dict."""
 
     parsed = urllib.parse.urlparse(url)
@@ -569,7 +571,17 @@ def crawl(url, max_pages=0, timeout=15, max_bytes=524288, verify_ssl=True):
     }
 
     # 6. Crawl additional pages
-    if max_pages > 0:
+    if page_type_mode and crawl_urls:
+        # Smart sampling: pick one URL per page type
+        samples = select_page_type_samples(
+            [{"url": p["url"], "priority": p["priority"], "lastmod": p["lastmod"]} for p in crawl_urls],
+            base,
+        )
+        sample_urls = {s["url"] for s in samples}
+        crawl_urls = [p for p in crawl_urls if p["url"] in sample_urls]
+        result["page_type_mode"] = True
+        result["page_types_sampled"] = [{"url": s["url"], "type": classify_page_type(s["url"])} for s in samples]
+    elif max_pages > 0:
         crawl_urls = crawl_urls[:max_pages]
 
     for page_info in crawl_urls:
@@ -584,6 +596,7 @@ def crawl(url, max_pages=0, timeout=15, max_bytes=524288, verify_ssl=True):
             pr = page_result(pu, p, st, ct)
             pr["priority"] = page_info["priority"]
             pr["lastmod"] = page_info["lastmod"]
+            pr["page_type"] = classify_page_type(pu, pr.get("title", ""), pr.get("meta_description", ""))
             result["additional_pages"].append(pr)
         else:
             result["additional_pages"].append({
@@ -595,6 +608,7 @@ def crawl(url, max_pages=0, timeout=15, max_bytes=524288, verify_ssl=True):
     all_pages = []
     hp = result.get("homepage")
     if hp and hp.get("is_html", True) and not hp.get("error"):
+        hp["page_type"] = "homepage"
         all_pages.append(hp)
     all_pages.extend([p for p in result["additional_pages"] if p.get("is_html", True)])
 
@@ -609,9 +623,12 @@ def crawl(url, max_pages=0, timeout=15, max_bytes=524288, verify_ssl=True):
 
     all_schema = set()
     all_apis = set()
+    page_types_found = set()
     for p in all_pages:
         all_schema.update(p.get("schema_types", []))
         all_apis.update(p.get("api_endpoints", []))
+        pt = p.get("page_type", "unknown")
+        page_types_found.add(pt)
 
     result["aggregate"] = {
         "pages_crawled": total,
@@ -620,34 +637,244 @@ def crawl(url, max_pages=0, timeout=15, max_bytes=524288, verify_ssl=True):
         "pages_js_rendered": js_rendered,
         "pages_with_semantic_html": with_semantic,
         "pages_with_cookie_consent": with_cookie,
-        "pages_with_anti_bot": with_iframes,
+        "pages_with_anti_bot": with_antibot,
         "pages_with_iframes": with_iframes,
         "schema_types_found": sorted(all_schema),
         "api_endpoints": sorted(all_apis),
+        "page_types_found": sorted(page_types_found),
     }
 
     return result
+
+
+# ─── Page-Type Classification ───────────────────────────────────────────────
+
+# URL patterns that suggest different page types
+PAGE_TYPE_PATTERNS = {
+    "product": [
+        r"/(?:product|item|sku)/[^/]+$",
+        r"/(?:skills?|tools?|plugins?|extensions?|apps?)/[^/]+$",
+        r"/(?:courses?|lessons?|tutorials?)/[^/]+$",
+        r"/(?:listing|offer|deal|package)s?/[^/]+$",
+    ],
+    "category": [
+        r"/(?:categor|tag|topic)s?(/[^/]+)?/?$",
+        r"/(?:skills?|tools?|plugins?|products?|services?|courses?|blog)s?/?$",
+        r"/(?:collections?|departments?|industries?)s?/?$",
+        r"/(?:docs?|learn|guides?|help|support)s?/?$",
+    ],
+    "content": [
+        r"/(?:blog|article|post|news|story|press|journal)s?/[^/]+$",
+        r"/(?:docs?|guide|tutorial|how-to|about|faq)s?/[^/]+$",
+        r"/(?:page|wp|content)/[^/]+$",
+        r"/\d{4}/\d{2}/",  # date-based blog URLs
+    ],
+}
+
+
+def classify_page_type(url, title="", meta_desc=""):
+    """Classify a URL into a page type: homepage, product, category, content, or other."""
+    path = urlparse(url).path.rstrip("/")
+
+    # Homepage detection
+    if path in ("", "/") or url.rstrip("/").endswith(urlparse(url).netloc):
+        return "homepage"
+
+    for page_type, patterns in PAGE_TYPE_PATTERNS.items():
+        for pattern in patterns:
+            if re.search(pattern, path, re.I):
+                return page_type
+
+    # Fallback: use title/meta cues
+    text = (title + " " + meta_desc).lower()
+    if any(w in text for w in ["product", "sku", "price", "buy", "add to cart"]):
+        return "product"
+    if any(w in text for w in ["blog", "article", "post", "news", "author"]):
+        return "content"
+    if any(w in text for w in ["browse", "all", "catalog", "directory", "collection"]):
+        return "category"
+
+    return "other"
+
+
+def select_page_type_samples(sitemap_pages, base_url, max_per_type=1):
+    """Pick one URL per page type from the sitemap. Returns list of {url, type, priority, lastmod}."""
+    typed = defaultdict(list)
+    homepage_url = None
+
+    for page in sitemap_pages:
+        url = page["url"]
+        ptype = classify_page_type(url)
+        if ptype == "homepage":
+            homepage_url = page
+            continue
+        typed[ptype].append(page)
+
+    samples = []
+    # Prefer higher priority pages within each type
+    for ptype, pages in typed.items():
+        pages.sort(key=lambda p: (p["priority"] is not None, p["priority"] or 0), reverse=True)
+        samples.extend(pages[:max_per_type])
+
+    return samples
+
+
+# ─── Compare Mode ──────────────────────────────────────────────────────────
+
+def compare_results(results):
+    """Compare two or more crawl results side-by-side. Returns comparison dict."""
+    if len(results) < 2:
+        return {"error": "Need at least 2 URLs to compare"}
+
+    comparison = {
+        "urls": [],
+        "scores": {},
+        "dimension_deltas": {},
+        "recommendations": [],
+    }
+
+    for r in results:
+        url = r["url"]
+        score = calculate_score(r)
+        comparison["urls"].append(url)
+        comparison["scores"][url] = score
+
+    # Dimension-level comparison
+    dimensions = ["ai_crawler", "ai_readability", "structured_data", "content_access", "technical"]
+    for dim in dimensions:
+        vals = {}
+        for r in results:
+            s = calculate_score(r)
+            vals[r["url"]] = s.get(dim, 0)
+        comparison["dimension_deltas"][dim] = vals
+
+    # Find the biggest competitive gaps
+    url_a, url_b = results[0]["url"], results[1]["url"]
+    score_a = comparison["scores"][url_a]
+    score_b = comparison["scores"][url_b]
+
+    for dim in dimensions:
+        diff = comparison["dimension_deltas"][dim].get(url_b, 0) - comparison["dimension_deltas"][dim].get(url_a, 0)
+        if abs(diff) >= 5:
+            leader = url_a if diff < 0 else url_b
+            gainer = url_b if diff < 0 else url_a
+            comparison["recommendations"].append({
+                "dimension": dim,
+                "gap": diff,
+                "leader": leader,
+                "suggestion": f"{gainer} could gain {abs(diff)} pts by improving {dim}",
+            })
+
+    comparison["recommendations"].sort(key=lambda r: abs(r["gap"]), reverse=True)
+    return comparison
+
+
+def calculate_score(crawl_data):
+    """Calculate visibility score from crawl data. Returns dict with per-dimension scores."""
+    score = {"total": 0, "ai_crawler": 0, "ai_readability": 0, "structured_data": 0, "content_access": 0, "technical": 0}
+
+    # AI Crawler Access (20)
+    ai = crawl_data.get("ai_crawler_summary", {})
+    if crawl_data.get("robots_txt", {}).get("exists"):
+        score["ai_crawler"] += 5
+    if not ai.get("blocked"):
+        score["ai_crawler"] += 10
+    if ai.get("allowed"):
+        score["ai_crawler"] += 5
+
+    # AI Readability Files (20)
+    llms = crawl_data.get("llms_txt", {})
+    if llms.get("exists") and llms.get("follows_spec"):
+        score["ai_readability"] += 10
+    if llms.get("has_links"):
+        score["ai_readability"] += 5
+    ab = crawl_data.get("agents_brief_txt", {})
+    if ab.get("exists"):
+        score["ai_readability"] += 5
+
+    # Structured Data (25)
+    hp = crawl_data.get("homepage", {})
+    agg = crawl_data.get("aggregate", {})
+    if hp.get("json_ld_count", 0) > 0:
+        score["structured_data"] += 5
+    schema = set(agg.get("schema_types_found", []))
+    if schema & {"Organization", "WebSite"}:
+        score["structured_data"] += 5
+    if schema & {"LocalBusiness", "Service", "Product", "SoftwareApplication"}:
+        score["structured_data"] += 5
+    if "FAQPage" in schema:
+        score["structured_data"] += 5
+    if len(schema) > 1:
+        score["structured_data"] += 5
+
+    # Content Accessibility (20)
+    if hp.get("has_substantial_content"):
+        score["content_access"] += 8
+    if hp.get("semantic_tag_count", 0) >= 3:
+        score["content_access"] += 4
+    if len(hp.get("meta_description", "")) > 50:
+        score["content_access"] += 4
+    if len(hp.get("title", "")) > 10:
+        score["content_access"] += 4
+
+    # Technical Foundation (15)
+    if crawl_data.get("sitemap", {}).get("exists"):
+        score["technical"] += 5
+    if not hp.get("has_anti_bot"):
+        score["technical"] += 5
+    if not hp.get("has_cookie_consent"):
+        score["technical"] += 5
+
+    score["total"] = sum(score[d] for d in ["ai_crawler", "ai_readability", "structured_data", "content_access", "technical"])
+    return score
 
 
 # ─── CLI ─────────────────────────────────────────────────────────────────────
 
 def main():
     ap = argparse.ArgumentParser(description="AEO Crawl — website data for AEO audit")
-    ap.add_argument("url", help="URL to audit (must start with http:// or https://)")
-    ap.add_argument("--max-pages", type=int, default=10, help="Max pages from sitemap (0 = all, default 10)")
+    ap.add_argument("url", nargs="?", help="URL to audit (must start with http:// or https://)")
+    ap.add_argument("--max-pages", type=int, default=10, help="Max pages from sitemap (default: 10, 0 = all)")
     ap.add_argument("--timeout", type=int, default=15, help="Request timeout in seconds")
     ap.add_argument("--max-bytes", type=int, default=524288, help="Max response size in bytes (default 512KB)")
     ap.add_argument("--no-ssl-verify", action="store_true", help="Skip SSL certificate verification")
+    ap.add_argument("--page-types", action="store_true", help="Sample one URL per page type instead of top N by priority")
+    ap.add_argument("--compare", nargs="+", metavar="URL", help="Compare two or more URLs (e.g. --compare URL1 URL2)")
+    ap.add_argument("--score", action="store_true", help="Calculate and output score from crawl data")
     args = ap.parse_args()
 
-    url = args.url.strip()
-    if not re.match(r"^https?://", url, re.I):
-        print(json.dumps({"error": "Invalid URL — must start with http:// or https://"}))
+    def validate_url(u):
+        u = u.strip()
+        if not re.match(r"^https?://", u, re.I):
+            return None
+        if any(c in u for c in ';|&$`(){}<>\n'):
+            return None
+        return u
+
+    # Compare mode
+    if args.compare:
+        urls = [validate_url(u) for u in args.compare]
+        urls = [u for u in urls if u]
+        if len(urls) < 2:
+            print(json.dumps({"error": "--compare requires at least 2 valid URLs"}))
+            sys.exit(1)
+        results = []
+        for u in urls:
+            r = crawl(u, max_pages=4 if args.page_types else args.max_pages,
+                      timeout=args.timeout, max_bytes=args.max_bytes, verify_ssl=not args.no_ssl_verify)
+            results.append(r)
+        comp = compare_results(results)
+        print(json.dumps(comp, indent=2, default=str))
+        return
+
+    # Single URL mode
+    if not args.url:
+        print(json.dumps({"error": "Provide a URL or use --compare"}))
         sys.exit(1)
 
-    # Shell safety
-    if any(c in url for c in ';|&$`(){}<>\n'):
-        print(json.dumps({"error": "Invalid URL — contains disallowed characters"}))
+    url = validate_url(args.url)
+    if not url:
+        print(json.dumps({"error": "Invalid URL — must start with http:// or https:// and contain no shell metacharacters"}))
         sys.exit(1)
 
     result = crawl(
@@ -656,7 +883,13 @@ def main():
         timeout=args.timeout,
         max_bytes=args.max_bytes,
         verify_ssl=not args.no_ssl_verify,
+        page_type_mode=args.page_types,
     )
+
+    if args.score:
+        s = calculate_score(result)
+        result["score"] = s
+
     print(json.dumps(result, indent=2, default=str))
 
 

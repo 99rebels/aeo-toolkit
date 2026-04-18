@@ -2,6 +2,39 @@
 
 Field reference for the JSON output from `aeo-crawl.py`.
 
+## New in v2
+
+```
+pagetype_mode     → true if --page-types was used
+page_types_sampled → [{url, type}] — which pages were selected and why
+score             → {total, ai_crawler, ai_readability, structured_data, content_access, technical}
+```
+
+## Page Types
+
+Detected automatically from URL patterns and title/meta cues:
+
+```
+homepage  → root URL or domain-only
+product   → /products/item, /skills/skill-name, /courses/lesson
+category  → /products, /blog, /docs, /learn, /skills (index pages)
+content   → /blog/post, /article/slug, /docs/guide, /YYYY/MM/date-based
+other     → anything that doesn't match above
+```
+
+Each page result includes a `page_type` field.
+
+## Compare Mode Output
+
+When using `--compare`, the output includes:
+
+```
+urls              → list of compared URLs
+scores            → {url: {total, ai_crawler, ai_readability, ...}}
+dimension_deltas  → {dimension: {url: score}} per dimension
+recommendations   → [{dimension, gap, leader, suggestion}]
+```
+
 ## Homepage Object
 
 ```
@@ -79,4 +112,5 @@ pages_with_anti_bot            → Pages with anti-bot protection
 pages_with_iframes             → Pages containing iframes
 schema_types_found             → All schema types across all pages
 api_endpoints                  → All API endpoints across all pages
+page_types_found               → Page types detected (homepage, product, etc.)
 ```

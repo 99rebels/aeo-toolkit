@@ -4,7 +4,8 @@ description: >-
   Audit any website's visibility to AI agents and generate every file needed
   to fix it. Detects JS rendering gaps, missing structured data, blocked AI
   crawlers, cookie consent walls, anti-bot protections, and more. Generates
-  robots.txt, llms.txt, JSON-LD templates, and agents-brief.txt.
+  robots.txt, llms.txt, JSON-LD templates, and agents-brief.txt. Compare
+  competitors and track score improvements over time.
 homepage: https://github.com/99rebels/aeo-toolkit
 allowed-tools:
   - Bash(python3 *)
@@ -31,6 +32,7 @@ This skill detects the problems and generates the fixes. No external dependencie
 - "Why doesn't my business show up in ChatGPT / Claude / Perplexity?"
 - "Check if AI agents can read my website"
 - "Generate llms.txt / robots.txt / structured data"
+- "Compare my site vs competitor for AI visibility"
 - "AEO audit", "GEO audit", "AI search optimization"
 - "Make my site visible to AI agents"
 
@@ -46,20 +48,84 @@ The default crawls the homepage + essential files + up to 10 pages from the site
 # Homepage only (fastest)
 python3 scripts/aeo-crawl.py "https://example.com" --max-pages 1
 
+# Smart page-type sampling (one of each: homepage, product, content, category)
+python3 scripts/aeo-crawl.py "https://example.com" --page-types
+
 # Deep crawl
 python3 scripts/aeo-crawl.py "https://example.com" --max-pages 50
 
-# All pages (slow — small sites only)
-python3 scripts/aeo-crawl.py "https://example.com" --max-pages 0
+# Competitor comparison
+python3 scripts/aeo-crawl.py --compare "https://example.com" "https://competitor.com"
+
+# Include calculated score in output
+python3 scripts/aeo-crawl.py "https://example.com" --score
 ```
 
 **Flags:**
 
 ```
 --max-pages N       Pages from sitemap (default: 10, 0 = all)
+--page-types        Smart sampling: one URL per page type (4 pages)
+--compare URL URL   Compare two or more sites side-by-side
+--score             Include calculated score in output
 --timeout SECONDS   Per-request timeout (default: 15)
 --max-bytes BYTES   Max response size (default: 512KB)
 --no-ssl-verify     Skip SSL verification
+```
+
+## Modes
+
+### 🔍 Audit Mode (default)
+
+Run a full audit: crawl, score, generate files, present report.
+
+### 📊 Compare Mode
+
+```bash
+python3 scripts/aeo-crawl.py --compare "https://site-a.com" "https://site-b.com" --page-types
+```
+
+Audits both URLs, then outputs:
+- Per-site scores and grades
+- Dimension-level comparison (who wins on structured data, semantic HTML, etc.)
+- Recommendations: which dimension each site should improve to close the gap
+
+**Use `--page-types` with compare** for fairer results — both sites get sampled by page type, not by arbitrary priority.
+
+Present as a side-by-side report:
+```
+### Score Comparison
+| Dimension | Site A | Site B | Gap |
+|-----------|--------|--------|-----|
+| AI Crawler Access | 15/20 | 20/20 | -5 |
+| Structured Data | 5/25 | 0/25 | +5 |
+
+### Competitive Recommendations
+- Site A: Add explicit AI crawler rules to robots.txt (+5 pts)
+- Site B: Add JSON-LD schema markup (+10-20 pts) ← biggest opportunity
+```
+
+### 🔄 Re-Audit Mode
+
+After the user implements changes, re-run and compare:
+
+```bash
+python3 scripts/aeo-crawl.py "https://example.com" --score
+```
+
+Show the score delta and highlight what improved vs what's still open.
+
+```
+### Score Improvement
+| Dimension | Before | After | Change |
+|-----------|--------|-------|--------|
+| AI Crawler Access | 15 | 20 | +5 ✅ |
+| Structured Data | 0 | 15 | +15 ✅ |
+| Total | 61 | 82 | +21 |
+
+### Still Open
+- Semantic HTML still minimal (only nav tag)
+- agents-brief.txt still serving HTML instead of text
 ```
 
 ## Audit Flow
@@ -84,6 +150,12 @@ Check these sections in order of impact:
 5. agents_brief_txt     → Exists? (only relevant for sites with APIs/ecommerce)
 6. sitemap              → Exists? How many pages?
 ```
+
+**If using `--page-types`**, also check per-page-type patterns:
+- Does the product page have Product/SoftwareApplication schema?
+- Does the content page have Article schema?
+- Do category pages have ItemList schema?
+This catches type-specific gaps that homepage-only analysis misses.
 
 ### Step 3: Score
 
@@ -129,6 +201,31 @@ The .txt files are ready to upload. JSON-LD templates need the user (or their de
 Templates and rules: [references/file-templates.md](references/file-templates.md)
 
 **agents-brief.txt is conditional** — only generate if the site has APIs, e-commerce, or interactive features. Skip for brochure/blog sites.
+
+### Step 4.5: Interactive Q&A (for complete file generation)
+
+**When the user wants complete, upload-ready files (no placeholders):**
+
+After the audit, ask targeted questions based on what's missing. Group them — don't ask one at a time:
+
+```
+I need a few details to complete your files:
+
+1. What type of business/site is this? (e.g. SaaS marketplace, local bakery, consulting firm)
+2. What are your top 3 services/products?
+3. Do you have a physical location? (for LocalBusiness schema)
+4. What are 3-5 common questions customers ask? (for FAQPage schema)
+5. Which AI crawlers, if any, do you want to block?
+```
+
+Use the answers to fill in every `[PLACEHOLDER]` and generate complete files. The goal: user uploads files, done.
+
+**Rules:**
+- Ask questions **after** presenting the audit — the audit determines what files are needed
+- Batch questions (3-5 at once), don't do back-and-forth for each one
+- Only ask about things the audit couldn't determine from the crawl
+- If the user doesn't know an answer, leave a clear placeholder with guidance
+- For JSON-LD, explain what each schema type does and why it's recommended for their site type
 
 ### Step 5: Present the Report
 
@@ -179,7 +276,7 @@ Templates and rules: [references/file-templates.md](references/file-templates.md
 ### Next Steps
 1. Upload drop-in files to server
 2. Embed JSON-LD into site templates
-3. Fill in [PLACEHOLDER] values
+3. Fill in [PLACEHOLDER] values (or answer Q&A for complete files)
 4. Re-audit to verify improvements
 ```
 
@@ -205,16 +302,6 @@ The crawl automatically detects 8 patterns that make sites invisible to agents:
 ```
 
 Full reference with detection methods and fixes: [references/agent-hostile-patterns.md](references/agent-hostile-patterns.md)
-
-## Re-Audit
-
-After implementing changes, re-run and compare:
-
-```bash
-python3 scripts/aeo-crawl.py "https://example.com"
-```
-
-Show the score delta and highlight what improved.
 
 ## Security
 
