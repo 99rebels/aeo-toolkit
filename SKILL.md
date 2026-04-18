@@ -267,10 +267,14 @@ Use the answers to fill in every `[PLACEHOLDER]` and generate complete files. Th
 
 ### Step 5: Present the Report
 
+Structure the output as a clear, actionable report. Use `---` horizontal rules between major sections for readability.
+
 ```
 ## AEO Audit: [domain]
 
 **Score: [X]/100 — Grade [A+ through F]**
+
+---
 
 ### Findings
 
@@ -282,6 +286,8 @@ Use the answers to fill in every `[PLACEHOLDER]` and generate complete files. Th
 
 🟢 Nice to Have
 - [Issue]
+
+---
 
 ### Agent-Hostile Patterns
 | Pattern | Status | Detail |
@@ -295,6 +301,8 @@ Use the answers to fill in every `[PLACEHOLDER]` and generate complete files. Th
 | Auth/paywall | ✅/🔴 | [...] |
 | Canonical | ✅/🟡 | [...] |
 
+---
+
 ### Score Breakdown
 | Dimension | Score | Max | Notes |
 |-----------|-------|-----|-------|
@@ -305,11 +313,15 @@ Use the answers to fill in every `[PLACEHOLDER]` and generate complete files. Th
 | Technical Foundation | [X] | 15 | [...] |
 | **Total** | **[X]** | **100** | |
 
+---
+
 ### Files to Generate
 - robots.txt — drop-in
 - llms.txt — drop-in
 - JSON-LD: [types] — code-embedded
 - agents-brief.txt — drop-in (if applicable)
+
+---
 
 ### Next Steps
 1. Upload drop-in files to server
