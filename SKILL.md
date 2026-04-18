@@ -82,27 +82,28 @@ Run a full audit: crawl, score, generate files, present report.
 ### 📊 Compare Mode
 
 ```bash
-python3 scripts/aeo-crawl.py --compare "https://site-a.com" "https://site-b.com" --page-types
+python3 scripts/aeo-crawl.py --compare "https://yoursite.com" "https://competitor.com" --page-types
 ```
 
-Audits both URLs, then outputs:
-- Per-site scores and grades
-- Dimension-level comparison (who wins on structured data, semantic HTML, etc.)
-- Recommendations: which dimension each site should improve to close the gap
+Audits both URLs, then outputs per-dimension scores. **First URL is the user's site. Second URL is the benchmark.** Recommendations focus on what the user's site should improve to close the gap.
 
-**Use `--page-types` with compare** for fairer results — both sites get sampled by page type, not by arbitrary priority.
+**Use `--page-types` with compare** for fairer results — both sites get sampled by page type.
 
-Present as a side-by-side report:
+Present as a competitive report:
 ```
 ### Score Comparison
-| Dimension | Site A | Site B | Gap |
-|-----------|--------|--------|-----|
+| Dimension | Your Site | Competitor | Gap |
+|-----------|-----------|------------|-----|
 | AI Crawler Access | 15/20 | 20/20 | -5 |
-| Structured Data | 5/25 | 0/25 | +5 |
+| Structured Data | 5/25 | 20/25 | -15 |
 
-### Competitive Recommendations
-- Site A: Add explicit AI crawler rules to robots.txt (+5 pts)
-- Site B: Add JSON-LD schema markup (+10-20 pts) ← biggest opportunity
+### How to Close the Gap
+1. Add JSON-LD structured data (+15-20 pts) ← biggest opportunity
+2. Add explicit AI crawler rules to robots.txt (+5 pts)
+
+### Where You're Winning
+- Your llms.txt follows the spec; competitor's doesn't
+- Better semantic HTML coverage
 ```
 
 ### 🔄 Re-Audit Mode
@@ -211,21 +212,37 @@ After the audit, ask targeted questions based on what's missing. Group them — 
 ```
 I need a few details to complete your files:
 
-1. What type of business/site is this? (e.g. SaaS marketplace, local bakery, consulting firm)
+1. What type of business/site is this? (e.g. SaaS, local service, consultancy)
 2. What are your top 3 services/products?
-3. Do you have a physical location? (for LocalBusiness schema)
-4. What are 3-5 common questions customers ask? (for FAQPage schema)
-5. Which AI crawlers, if any, do you want to block?
+3. What's your pricing model? (e.g. fixed price, hourly, contact for quote, $$-$$$)
+4. What's your service area? (local city/region, country, worldwide?)
+5. Contact details? (email, phone, address — or a contact form URL)
+6. What are 3-5 common questions your customers/clients ask?
+   (If you don't have FAQs ready, I can help draft some based on your services)
+7. Any social/profile links? (LinkedIn, Twitter/X, GitHub, etc.)
 ```
+
+**For JS-rendered sites** (homepage body_char_count is 0 or very low), add this before the questions:
+
+```
+⚠️ Your site is fully client-rendered — I couldn't read any content from the crawl.
+To generate accurate files, please paste:
+- Your homepage text (or key paragraphs from it)
+- Any page URLs that aren't in a sitemap
+- Or just describe what your site does in your own words
+```
+
+This is critical. For JS-rendered sites, the audit data is near-empty — the questions and user-provided content are the *only* source of truth.
 
 Use the answers to fill in every `[PLACEHOLDER]` and generate complete files. The goal: user uploads files, done.
 
 **Rules:**
 - Ask questions **after** presenting the audit — the audit determines what files are needed
-- Batch questions (3-5 at once), don't do back-and-forth for each one
+- Batch questions (5-7 at once), don't do back-and-forth for each one
 - Only ask about things the audit couldn't determine from the crawl
 - If the user doesn't know an answer, leave a clear placeholder with guidance
 - For JSON-LD, explain what each schema type does and why it's recommended for their site type
+- If the user has no FAQs, offer to draft 3-5 based on their services and industry
 
 ### Step 5: Present the Report
 

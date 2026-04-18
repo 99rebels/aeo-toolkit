@@ -1,0 +1,22 @@
+# 99rebels
+
+> 99rebels rebuilds law firm websites for legal professionals worldwide. We specialise in modern, compliant websites for legal practices — from design and development to ongoing maintenance and SEO.
+
+## About
+
+99rebels is a web design and development studio that works exclusively with law firms. We rebuild outdated legal websites into modern, high-performing sites that build client trust and drive enquiries.
+
+## Services
+
+- **Website Rebuilds** — Complete redesign and development of law firm websites
+- **Ongoing Maintenance** — Hosting, updates, security, and performance monitoring
+- **SEO** — Search engine optimisation tailored for legal services and practice areas
+
+## Target Audience
+
+Law firms, solicitors, barristers, and legal professionals seeking a modern online presence.
+
+## Key Pages
+
+- [Homepage](https://www.99rebels.com/)
+- [Placeholder: additional pages to be added as site grows]

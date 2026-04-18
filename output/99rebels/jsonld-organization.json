@@ -1,0 +1,13 @@
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "99rebels",
+  "url": "https://www.99rebels.com",
+  "logo": "https://lovable.dev/opengraph-image-p98pqg.png",
+  "description": "99rebels rebuilds law firm websites for legal professionals worldwide. Specialising in modern, compliant websites for legal practices — from design and development to ongoing maintenance and SEO.",
+  "areaServed": "Worldwide",
+  "serviceType": ["Web Design", "Web Development", "Website Maintenance", "SEO"],
+  "sameAs": [
+    "https://github.com/99rebels"
+  ]
+}
