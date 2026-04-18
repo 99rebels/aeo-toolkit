@@ -201,6 +201,27 @@ The .txt files are ready to upload. JSON-LD templates need the user (or their de
 
 Templates and rules: [references/file-templates.md](references/file-templates.md)
 
+**How to choose the right JSON-LD schema types:**
+
+```
+Site type               → Use these schema types
+──────────────────────────────────────────────────────
+Local business          → LocalBusiness + FAQPage
+SaaS / online service   → Organization + WebSite + FAQPage
+Marketplace / platform  → Organization + WebSite + ItemList
+Portfolio / freelancer  → ProfessionalService + FAQPage
+Blog / publisher        → Organization + WebSite + Article
+E-commerce              → Organization + WebSite + Product
+Agency / consultancy    → ProfessionalService + FAQPage
+```
+
+**Rules for schema selection:**
+- Every site gets Organization (or ProfessionalService) + WebSite + FAQPage as a baseline
+- Only add Product/Service/SoftwareApplication if the site has specific offerings
+- Don't add LocalBusiness unless the site has a physical location
+- Don't add more than 4 JSON-LD blocks per page — combine where possible
+- FAQPage requires at least 3 Q&A pairs to be useful
+
 **agents-brief.txt is conditional** — only generate if the site has APIs, e-commerce, or interactive features. Skip for brochure/blog sites.
 
 ### Step 4.5: Interactive Q&A (for complete file generation)
